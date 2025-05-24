@@ -58,6 +58,7 @@ const isLoading = ref(true);
 const isCompleting = ref(false);
 const isVerifying = ref(false);
 const projectInfo = ref(null);
+const isAdmin = ref(false);
 
 const shortAddress = (addr) => {
   if (!addr) return '';
@@ -69,42 +70,42 @@ const formatDate = (timestamp) => {
 };
 
 const formatEther = (wei) => {
-  return ethers.utils.formatEther(wei);
+  try {
+    return ethers.utils.formatEther(wei || 0);
+  } catch (e) {
+    console.error("Error formatting ether value:", wei, e);
+    return 'N/A';
+  }
 };
 
-const canVerifyProject = computed(async () => {
-  if (!tasks.value.length) return false;
-  
-  try {
-    const provider = new ethers.providers.Web3Provider(window.ethereum);
-    const signer = provider.getSigner();
-    const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-    const address = await signer.getAddress();
-    
-    const admin = await contract.admin();
-    const isAdmin = admin.toLowerCase() === address.toLowerCase();
-    
-    // Get project info to check completion status
-    const projectInfo = await contract.getProjectInfo(props.projectId);
-    if (projectInfo.isCompleted) {
-      return false;  // Don't show verify button if project is already completed
-    }
-    
-    return isAdmin && tasks.value.every(task => task.completed);
-  } catch (error) {
-    console.error('Error checking verify permission:', error);
-    return false;
-  }
+const canVerifyProject = computed(() => {
+  const result = isAdmin.value 
+         && tasks.value.every(task => task.completed) 
+         && (projectInfo.value ? !projectInfo.value.isCompleted : false);
+         
+  console.log('canVerifyProject Computed:', {
+    isAdmin: isAdmin.value,
+    allTasksCompleted: tasks.value.every(task => task.completed),
+    projectNotCompleted: projectInfo.value ? !projectInfo.value.isCompleted : 'Project Info not loaded',
+    finalResult: result
+  });
+
+  return result;
 });
 
 const loadProjectInfo = async (contract) => {
-  const info = await contract.getProjectInfo(props.projectId);
-  projectInfo.value = {
-    name: info.name,
-    teamSize: info.teamSize.toNumber(),
-    taskCount: info.taskCount.toNumber(),
-    isCompleted: info.isCompleted
-  };
+  try {
+    const info = await contract.getProjectInfo(props.projectId);
+    projectInfo.value = {
+      name: info.name,
+      teamSize: info.teamSize.toNumber(),
+      taskCount: info.taskCount.toNumber(),
+      isCompleted: info.isCompleted
+    };
+  } catch (error) {
+     console.error('Error loading project info:', error);
+     projectInfo.value = null;
+  }
 };
 
 const loadTasks = async () => {
@@ -119,21 +120,19 @@ const loadTasks = async () => {
     const signer = provider.getSigner();
     const address = await signer.getAddress();
 
-    // Load project info and team members
-    const [projectInfo, teamMembers] = await Promise.all([
-      contract.getProjectInfo(props.projectId),
-      contract.getTeamMembers(props.projectId)
-    ]);
+    const adminAddress = await contract.admin();
+    isAdmin.value = adminAddress.toLowerCase() === address.toLowerCase();
+    console.log('Admin address:', adminAddress, 'Current address:', address, 'Is Admin:', isAdmin.value);
+
+    const teamMembers = await contract.getTeamMembers(props.projectId);
 
     console.log('Current address:', address);
     console.log('Team members:', teamMembers);
     const isProjectMember = teamMembers.some(member => member.toLowerCase() === address.toLowerCase());
     console.log('Is project member:', isProjectMember);
 
-    // Get task IDs for the project
     const taskIds = await contract.getTaskIds(props.projectId);
     
-    // Load tasks
     const taskPromises = taskIds.map(async (taskId) => {
       const task = await contract.getTask(props.projectId, taskId);
       let status = 'PENDING';
@@ -147,7 +146,11 @@ const loadTasks = async () => {
       console.log('Task', taskId.toString(), {
         assignedTo: task.assignedTo,
         currentAddress: address,
-        isAssignedTo: isAssignedToMe
+        isAssignedToMe,
+        taskStatus: {
+          completed: task.completed,
+          verified: task.verified
+        }
       });
       
       return {
@@ -165,6 +168,9 @@ const loadTasks = async () => {
     });
 
     tasks.value = await Promise.all(taskPromises);
+    
+    await loadProjectInfo(contract);
+
   } catch (error) {
     console.error('Error loading tasks:', error);
     alert('Failed to load tasks. Please try again.');
@@ -181,7 +187,6 @@ const completeTask = async (task) => {
     const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
     const address = await signer.getAddress();
 
-    // Check if current user is assigned to this task
     if (task.assignedTo.toLowerCase() !== address.toLowerCase()) {
       alert('Only the assigned user can complete this task.');
       return;
@@ -205,20 +210,17 @@ const verifyProject = async () => {
     const signer = provider.getSigner();
     const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-    // Get current account
     const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
     const currentAccount = accounts[0];
 
-    // Check if current account is admin
     const admin = await contract.admin();
     if (admin.toLowerCase() !== currentAccount.toLowerCase()) {
       alert('Only admin can verify the project.');
       return;
     }
 
-    // Calculate total reward
     const totalReward = tasks.value.reduce((sum, task) => {
-      if (!task.verified) {  // Only include unverified tasks
+      if (!task.verified) {
         const reward = ethers.BigNumber.from(task.reward.toString());
         return sum.add(reward);
       }
@@ -240,8 +242,17 @@ const verifyProject = async () => {
   } catch (error) {
     console.error('Error verifying project:', error);
     if (error.code === -32603) {
-      alert('Failed to verify project. Make sure you have enough ETH to pay rewards.');
-    } else {
+       let errorMessage = 'Failed to verify project.';
+       if (error.data && error.data.message) {
+           errorMessage += ' Error: ' + error.data.message;
+       } else if (error.message) {
+           errorMessage += ' Error: ' + error.message;
+       }
+        alert(errorMessage + ' Make sure you have enough ETH and are the admin.');
+    } else if (error.message.includes('Only admin can call this function')){
+        alert('Only admin can verify the project.');
+    }
+     else {
       alert('Failed to verify project. Please try again.');
     }
   } finally {
@@ -249,11 +260,17 @@ const verifyProject = async () => {
   }
 };
 
-watch(() => props.projectId, () => {
-  loadTasks();
-});
+watch(() => props.projectId, (newProjectId, oldProjectId) => {
+  if (newProjectId && newProjectId !== oldProjectId) {
+      loadTasks();
+  }
+}, { immediate: true });
 
 onMounted(loadTasks);
+
+defineExpose({
+    loadTasks
+});
 </script>
 
 <style scoped>
