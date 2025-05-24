@@ -2,6 +2,11 @@
 
 Vue.js와 이더리움 스마트 컨트랙트를 사용하여 만든 탈중앙화 프로젝트 관리 애플리케이션입니다.
 
+<div style="display: flex; justify-content: space-around; align-items: flex-start;">
+  <img src="/screenshots/screenshot1.png" style="width: 48%;"/>
+  <img src="/screenshots/screenshot2.png" style="width: 48%;"/>
+</div>
+
 ## 필요 조건
 
 - Node.js >= 20.12.2
@@ -89,9 +94,3 @@ npm run dev
 ## 라이선스
 
 MIT
-
-# Vue 3 + Vite
-
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
-
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
