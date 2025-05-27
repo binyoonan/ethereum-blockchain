@@ -1,6 +1,6 @@
 # 프로젝트 관리 DApp
 
-Vue.js와 이더리움 스마트 컨트랙트를 사용하여 만든 탈중앙화 프로젝트 관리 애플리케이션입니다.
+Vue.js와 이더리움 스마트 컨트랙트를 사용하여 만든 프로젝트 관리 애플리케이션입니다.
 
 <div style="display: flex; justify-content: space-around; align-items: flex-start;">
   <img src="/screenshots/screenshot1.png" style="width: 48%;"/>
